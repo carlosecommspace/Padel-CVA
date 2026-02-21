@@ -550,3 +550,95 @@ select.form-control { cursor: pointer; }
   letter-spacing: 4px;
   flex-shrink: 0;
 }
+
+/* ─── PRINT VIEW ─────────────────────────────────────────────────────────── */
+.pv-topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.pv-topbar-title {
+  flex: 1;
+  font-weight: 700;
+  font-size: 15px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pv-doc {
+  padding: 24px 16px;
+  max-width: 680px;
+  margin: 0 auto;
+}
+.pv-header {
+  text-align: center;
+  padding-bottom: 20px;
+  margin-bottom: 24px;
+  border-bottom: 2px solid var(--green);
+}
+.pv-header-logo { font-size: 22px; font-weight: 800; color: var(--green-dark); }
+.pv-header-name { font-size: 18px; margin: 6px 0 4px; }
+.pv-header-sub  { font-size: 13px; color: var(--text-light); }
+
+.pv-section {
+  margin-bottom: 24px;
+  page-break-inside: avoid;
+}
+.pv-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--green-dark);
+  padding: 8px 0 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+.pv-bench {
+  font-size: 13px;
+  color: var(--text-light);
+  font-style: italic;
+  margin-bottom: 8px;
+}
+.pv-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.pv-table td, .pv-table th {
+  padding: 8px 10px;
+  border-bottom: 1px solid #eee;
+  vertical-align: middle;
+}
+.pv-table th {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-light);
+  font-weight: 600;
+  text-align: left;
+}
+.pv-court { width: 90px; font-size: 11px; text-transform: uppercase; color: var(--text-light); white-space: nowrap; }
+.pv-team  { line-height: 1.6; }
+.pv-score { text-align: center; font-size: 15px; font-weight: 700; width: 90px; white-space: nowrap; }
+.pv-dash  { color: #ccc; font-weight: 400; }
+.pv-pos   { width: 36px; font-size: 16px; }
+.pv-num   { text-align: center; width: 70px; font-weight: 600; }
+.pv-board th.pv-num { text-align: center; }
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; }
+  .pv-doc { padding: 0; max-width: 100%; }
+  .pv-section { page-break-inside: avoid; margin-bottom: 16px; }
+  .pv-table { font-size: 12px; }
+  .pv-table td, .pv-table th { padding: 5px 8px; }
+  .pv-header-logo { font-size: 18px; }
+  .pv-header-name { font-size: 15px; }
+}

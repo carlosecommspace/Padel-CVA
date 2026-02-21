@@ -34,8 +34,10 @@ async function route() {
     const mTourney     = h.match(/^\/tournaments\/(\d+)$/);
     const mRound       = h.match(/^\/rounds\/(\d+)$/);
     const mLeaderboard = h.match(/^\/tournaments\/(\d+)\/leaderboard$/);
+    const mPrint       = h.match(/^\/tournaments\/(\d+)\/print$/);
 
     if (mLeaderboard) return await renderLeaderboard(mLeaderboard[1]);
+    if (mPrint)       return await renderPrint(mPrint[1]);
     if (mTourney)     return await renderTournament(mTourney[1]);
     if (mRound)       return await renderRound(mRound[1]);
     await renderHome();
@@ -313,6 +315,10 @@ async function renderTournament(id) {
       ${t.rounds.length > 0 ? `
         <button class="btn btn-primary btn-full" onclick="navigate('/tournaments/${id}/leaderboard')">
           🏆 Ver Clasificación
+        </button>` : ''}
+      ${t.rounds.length > 0 ? `
+        <button class="btn btn-ghost btn-full" onclick="navigate('/tournaments/${id}/print')">
+          🖨️ Imprimir rondas (PDF)
         </button>` : ''}
       ${t.rounds.length > 0 && isAdmin() ? `
         <button class="btn btn-ghost-red btn-full btn-sm" onclick="deleteLastRound(${id}, ${t.rounds[t.rounds.length - 1].id})">
@@ -650,5 +656,90 @@ async function renderLeaderboard(id) {
       </button>
     </div>
     <div id="modal-container"></div>`;
+}
+
+// ─── PRINT VIEW ───────────────────────────────────────────────────────────────
+
+async function renderPrint(id) {
+  const [t, board] = await Promise.all([
+    GET(`/tournaments/${id}`),
+    GET(`/tournaments/${id}/leaderboard`),
+  ]);
+
+  let rounds = [];
+  if (t.rounds.length > 0) {
+    rounds = await Promise.all(t.rounds.map(r => GET(`/rounds/${r.id}`)));
+  }
+
+  const medals = ['🥇', '🥈', '🥉'];
+
+  const roundsHtml = rounds.map(r => {
+    const benchHtml = r.benched.length > 0
+      ? `<p class="pv-bench">En banca: ${r.benched.map(p => esc(p.name)).join(', ')}</p>`
+      : '';
+
+    const matchRows = r.matches.map(m => {
+      const team1 = m.players.filter(p => p.team === 1);
+      const team2 = m.players.filter(p => p.team === 2);
+      const score = m.status === 'finished'
+        ? `<strong>${m.team1_games} — ${m.team2_games}</strong>`
+        : `<span class="pv-dash">—</span>`;
+      return `
+        <tr>
+          <td class="pv-court">Cancha ${m.court_number}</td>
+          <td class="pv-team">${team1.map(p => esc(p.name)).join('<br>')}</td>
+          <td class="pv-score">${score}</td>
+          <td class="pv-team">${team2.map(p => esc(p.name)).join('<br>')}</td>
+        </tr>`;
+    }).join('');
+
+    return `
+      <div class="pv-section">
+        <h3 class="pv-section-title">Ronda ${r.round_number}</h3>
+        ${benchHtml}
+        <table class="pv-table"><tbody>${matchRows}</tbody></table>
+      </div>`;
+  }).join('');
+
+  const boardRows = board.map((p, i) => `
+    <tr>
+      <td class="pv-pos">${i < 3 ? medals[i] : `${i + 1}.`}</td>
+      <td>${esc(p.name)}</td>
+      <td class="pv-num">${p.games_won}</td>
+      <td class="pv-num">${p.matches_played}</td>
+      <td class="pv-num">${p.avg_games}</td>
+    </tr>`).join('');
+
+  const leaderboardHtml = board.length > 0 ? `
+    <div class="pv-section">
+      <h3 class="pv-section-title">Clasificación</h3>
+      <table class="pv-table pv-board">
+        <thead>
+          <tr>
+            <th>#</th><th>Jugador/a</th>
+            <th class="pv-num">Games</th>
+            <th class="pv-num">Partidos</th>
+            <th class="pv-num">Prom.</th>
+          </tr>
+        </thead>
+        <tbody>${boardRows}</tbody>
+      </table>
+    </div>` : '';
+
+  document.getElementById('app').innerHTML = `
+    <div class="pv-topbar no-print">
+      <button class="btn btn-ghost" onclick="navigate('/tournaments/${id}')">‹ Volver</button>
+      <span class="pv-topbar-title">${esc(t.name)}</span>
+      <button class="btn btn-primary" onclick="window.print()">🖨️ Imprimir / PDF</button>
+    </div>
+    <div class="pv-doc">
+      <div class="pv-header">
+        <div class="pv-header-logo">🎾 Padel CVA</div>
+        <h2 class="pv-header-name">${esc(t.name)}</h2>
+        <p class="pv-header-sub">${genderLabel(t.gender)} &middot; ${t.num_courts} canchas &middot; ${t.rounds.length} rondas</p>
+      </div>
+      ${roundsHtml}
+      ${leaderboardHtml}
+    </div>`;
 }
 
