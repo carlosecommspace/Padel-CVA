@@ -417,8 +417,29 @@ app.use((err, req, res, _next) => {
 // ─── START ───────────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 3000;
-initDB()
-  .then(() => app.listen(PORT, '0.0.0.0', () =>
-    console.log(`🎾 Padel CVA corriendo en http://localhost:${PORT}`)
-  ))
-  .catch(err => { console.error('Error al inicializar:', err); process.exit(1); });
+
+// Arrancar el servidor HTTP primero para que el healthcheck de Railway responda
+// mientras la base de datos termina de levantarse.
+app.listen(PORT, '0.0.0.0', () =>
+  console.log(`🎾 Padel CVA corriendo en http://localhost:${PORT}`)
+);
+
+// Conectar a la DB con reintentos (Railway puede tardar unos segundos en
+// tener el PostgreSQL listo después de que el proceso arranca).
+async function initWithRetry(attempts = 8, delayMs = 3000) {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      await initDB();
+      return;
+    } catch (err) {
+      console.error(`[DB] Intento ${i}/${attempts} fallido: ${err.message}`);
+      if (i < attempts) {
+        await new Promise(r => setTimeout(r, delayMs));
+        delayMs = Math.min(delayMs * 1.5, 15000); // backoff exponencial, máx 15 s
+      }
+    }
+  }
+  console.error('[DB] No se pudo conectar a la base de datos. Las peticiones fallarán hasta que esté disponible.');
+}
+
+initWithRetry();
