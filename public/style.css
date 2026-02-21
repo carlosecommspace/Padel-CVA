@@ -311,7 +311,8 @@ select.form-control { cursor: pointer; }
   text-overflow: ellipsis;
 }
 .team-name-2 {
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--text-mid);
   white-space: nowrap;
   overflow: hidden;
