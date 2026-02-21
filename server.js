@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto  = require('crypto');
 const express = require('express');
 const { Pool } = require('pg');
 const path = require('path');
@@ -81,9 +82,54 @@ async function initDB() {
 const wrap = fn => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
 
+// ─── AUTH ─────────────────────────────────────────────────────────────────────
+
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin1234';
+// Derive a stable secret from the password so tokens survive restarts
+const TOKEN_SECRET = crypto.createHmac('sha256', 'padel-cva-v1').update(ADMIN_PASSWORD).digest('hex');
+
+function generateToken() {
+  const ts  = Date.now().toString();
+  const sig = crypto.createHmac('sha256', TOKEN_SECRET).update('admin:' + ts).digest('hex');
+  return Buffer.from(ts + ':' + sig).toString('base64url');
+}
+
+function verifyToken(raw) {
+  try {
+    const decoded  = Buffer.from(raw, 'base64url').toString();
+    const colon    = decoded.indexOf(':');
+    const ts       = decoded.slice(0, colon);
+    const sig      = decoded.slice(colon + 1);
+    const expected = crypto.createHmac('sha256', TOKEN_SECRET).update('admin:' + ts).digest('hex');
+    const sBuf = Buffer.from(sig);
+    const eBuf = Buffer.from(expected);
+    if (sBuf.length !== eBuf.length || !crypto.timingSafeEqual(sBuf, eBuf)) return false;
+    const age = Date.now() - parseInt(ts, 10);
+    return age > 0 && age < 86400000 * 7; // 7 días
+  } catch { return false; }
+}
+
+function requireAdmin(req, res, next) {
+  const auth = req.headers.authorization || '';
+  if (!auth.startsWith('Bearer ')) return res.status(401).json({ error: 'No autorizado' });
+  if (!verifyToken(auth.slice(7))) return res.status(401).json({ error: 'Token inválido o expirado' });
+  next();
+}
+
 // ─── HEALTH ──────────────────────────────────────────────────────────────────
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
+app.post('/api/auth/login', (req, res) => {
+  const { password } = req.body || {};
+  if (!password) return res.status(400).json({ error: 'Contraseña requerida' });
+  const pwBuf    = Buffer.from(String(password));
+  const adminBuf = Buffer.from(ADMIN_PASSWORD);
+  if (pwBuf.length !== adminBuf.length || !crypto.timingSafeEqual(pwBuf, adminBuf)) {
+    return res.status(401).json({ error: 'Contraseña incorrecta' });
+  }
+  res.json({ token: generateToken() });
+});
 
 // ─── TOURNAMENTS ─────────────────────────────────────────────────────────────
 
@@ -98,7 +144,7 @@ app.get('/api/tournaments', wrap(async (req, res) => {
   res.json(result.rows);
 }));
 
-app.post('/api/tournaments', wrap(async (req, res) => {
+app.post('/api/tournaments', requireAdmin, wrap(async (req, res) => {
   const { name, gender, num_courts = 4 } = req.body;
   if (!name || !gender) return res.status(400).json({ error: 'Nombre y género requeridos' });
   const result = await pool.query(
@@ -126,7 +172,7 @@ app.get('/api/tournaments/:id', wrap(async (req, res) => {
   res.json({ ...t.rows[0], players: players.rows, rounds: rounds.rows });
 }));
 
-app.patch('/api/tournaments/:id', wrap(async (req, res) => {
+app.patch('/api/tournaments/:id', requireAdmin, wrap(async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
   const result = await pool.query(
@@ -136,14 +182,14 @@ app.patch('/api/tournaments/:id', wrap(async (req, res) => {
   res.json(result.rows[0]);
 }));
 
-app.delete('/api/tournaments/:id', wrap(async (req, res) => {
+app.delete('/api/tournaments/:id', requireAdmin, wrap(async (req, res) => {
   await pool.query('DELETE FROM tournaments WHERE id = $1', [req.params.id]);
   res.json({ success: true });
 }));
 
 // ─── PLAYERS ─────────────────────────────────────────────────────────────────
 
-app.post('/api/tournaments/:id/players', wrap(async (req, res) => {
+app.post('/api/tournaments/:id/players', requireAdmin, wrap(async (req, res) => {
   const { id } = req.params;
   const { names } = req.body;
   if (!Array.isArray(names) || names.length === 0)
@@ -161,7 +207,7 @@ app.post('/api/tournaments/:id/players', wrap(async (req, res) => {
   res.json(results);
 }));
 
-app.delete('/api/players/:id', wrap(async (req, res) => {
+app.delete('/api/players/:id', requireAdmin, wrap(async (req, res) => {
   await pool.query('DELETE FROM players WHERE id = $1', [req.params.id]);
   res.json({ success: true });
 }));
@@ -178,7 +224,7 @@ function shuffle(arr) {
   return a;
 }
 
-app.post('/api/tournaments/:id/rounds', wrap(async (req, res) => {
+app.post('/api/tournaments/:id/rounds', requireAdmin, wrap(async (req, res) => {
   const { id } = req.params;
 
   const [tRes, pRes, cntRes] = await Promise.all([
@@ -288,7 +334,7 @@ app.get('/api/rounds/:id', wrap(async (req, res) => {
   res.json({ ...rRes.rows[0], matches: mRes.rows, benched: bRes.rows });
 }));
 
-app.delete('/api/rounds/:id', wrap(async (req, res) => {
+app.delete('/api/rounds/:id', requireAdmin, wrap(async (req, res) => {
   const { id } = req.params;
   const client = await pool.connect();
   try {
@@ -330,7 +376,7 @@ app.delete('/api/rounds/:id', wrap(async (req, res) => {
 
 // ─── MATCHES ─────────────────────────────────────────────────────────────────
 
-app.put('/api/matches/:id/result', wrap(async (req, res) => {
+app.put('/api/matches/:id/result', requireAdmin, wrap(async (req, res) => {
   const { id } = req.params;
   const { team1_games, team2_games } = req.body;
   if (team1_games === undefined || team2_games === undefined)

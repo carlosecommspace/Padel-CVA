@@ -4,9 +4,15 @@
 
 async function api(method, path, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  const token = localStorage.getItem('admin_token');
+  if (token) opts.headers['Authorization'] = 'Bearer ' + token;
   if (body !== undefined) opts.body = JSON.stringify(body);
   const res = await fetch('/api' + path, opts);
   const data = await res.json().catch(() => ({ error: 'Error de red' }));
+  if (res.status === 401) {
+    localStorage.removeItem('admin_token');
+    throw new Error(data.error || 'No autorizado');
+  }
   if (!res.ok) throw new Error(data.error || 'Error del servidor');
   return data;
 }
@@ -45,6 +51,55 @@ async function route() {
 
 window.addEventListener('hashchange', route);
 window.addEventListener('DOMContentLoaded', route);
+
+// ─── AUTH ─────────────────────────────────────────────────────────────────────
+
+function isAdmin() { return !!localStorage.getItem('admin_token'); }
+
+function adminBtn() {
+  return isAdmin()
+    ? `<button class="admin-btn admin-btn-out" onclick="logout()">🔓 Salir</button>`
+    : `<button class="admin-btn" onclick="showLogin()">🔐 Admin</button>`;
+}
+
+function showLogin() {
+  let mc = document.getElementById('modal-container');
+  if (!mc) { mc = document.createElement('div'); mc.id = 'modal-container'; document.body.appendChild(mc); }
+  mc.innerHTML = `
+    <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+      <div class="modal">
+        <div class="modal-title">
+          Acceso Admin
+          <button class="modal-close" onclick="closeModal()">×</button>
+        </div>
+        <div class="form-group">
+          <label>Contraseña</label>
+          <input id="admin-pw" type="password" class="form-control" placeholder="Contraseña de administrador"
+            onkeydown="if(event.key==='Enter')doLogin()" />
+        </div>
+        <button class="btn btn-primary btn-full btn-lg" onclick="doLogin()">Entrar</button>
+      </div>
+    </div>`;
+  setTimeout(() => document.getElementById('admin-pw').focus(), 100);
+}
+
+async function doLogin() {
+  const password = document.getElementById('admin-pw').value;
+  if (!password) { toast('Ingresa la contraseña', 'error'); return; }
+  try {
+    const { token } = await api('POST', '/auth/login', { password });
+    localStorage.setItem('admin_token', token);
+    closeModal();
+    toast('Sesión iniciada ✓');
+    route();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function logout() {
+  localStorage.removeItem('admin_token');
+  toast('Sesión cerrada');
+  route();
+}
 
 // ─── UTILS ────────────────────────────────────────────────────────────────────
 
@@ -108,14 +163,18 @@ async function renderHome() {
       </div>`).join('');
 
   document.getElementById('app').innerHTML = `
-    <div class="header"><h1>🎾 Padel CVA</h1></div>
+    <div class="header">
+      <h1>🎾 Padel CVA</h1>
+      ${adminBtn()}
+    </div>
     <div class="card" style="margin-top:14px;">
       <div class="card-header">Torneos</div>
       <div class="card-body p0">${list}</div>
     </div>
+    ${isAdmin() ? `
     <div class="page-actions">
       <button class="btn btn-primary btn-full btn-lg" onclick="showCreateTournament()">+ Nuevo Torneo</button>
-    </div>
+    </div>` : ''}
     <div id="modal-container"></div>`;
 }
 
@@ -187,7 +246,7 @@ async function renderTournament(id) {
       <div class="player-item">
         <span class="player-name">${esc(p.name)}</span>
         <span class="player-stats">${p.games_won} games · ${p.matches_played} partidos</span>
-        ${t.status === 'setup'
+        ${t.status === 'setup' && isAdmin()
           ? `<button class="btn btn-sm btn-ghost-red" onclick="deletePlayer(${p.id},${id})">✕</button>`
           : ''}
       </div>`).join('');
@@ -219,6 +278,7 @@ async function renderTournament(id) {
         <span class="subtitle">${genderLabel(t.gender)} · ${t.num_courts} canchas</span>
       </div>
       ${genderBadge(t.gender)}
+      ${adminBtn()}
     </div>
 
     <div class="card" style="margin-top:12px;">
@@ -232,7 +292,7 @@ async function renderTournament(id) {
     <div class="card">
       <div class="card-header">
         Jugadores (${t.players.length})
-        <button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:white;" onclick="showAddPlayers(${id})">+ Agregar</button>
+        ${isAdmin() ? `<button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:white;" onclick="showAddPlayers(${id})">+ Agregar</button>` : ''}
       </div>
       <div class="card-body p0">${playerRows}</div>
     </div>
@@ -245,15 +305,16 @@ async function renderTournament(id) {
     </div>
 
     <div class="page-actions">
-      <button class="btn btn-orange btn-full btn-lg" onclick="generateRound(${id})"
-        ${canGenerate ? '' : 'disabled'}>
-        ⚡ Generar Ronda ${t.rounds.length + 1}
-      </button>
+      ${isAdmin() ? `
+        <button class="btn btn-orange btn-full btn-lg" onclick="generateRound(${id})"
+          ${canGenerate ? '' : 'disabled'}>
+          ⚡ Generar Ronda ${t.rounds.length + 1}
+        </button>` : ''}
       ${t.rounds.length > 0 ? `
         <button class="btn btn-primary btn-full" onclick="navigate('/tournaments/${id}/leaderboard')">
           🏆 Ver Clasificación
         </button>` : ''}
-      ${t.rounds.length > 0 ? `
+      ${t.rounds.length > 0 && isAdmin() ? `
         <button class="btn btn-ghost-red btn-full btn-sm" onclick="deleteLastRound(${id}, ${t.rounds[t.rounds.length - 1].id})">
           🗑 Eliminar última ronda
         </button>` : ''}
@@ -303,16 +364,12 @@ async function deletePlayer(playerId, tournamentId) {
 }
 
 async function generateRound(tournamentId) {
-  const btn = event.target;
-  btn.disabled = true;
-  btn.textContent = 'Generando...';
   try {
     const round = await POST(`/tournaments/${tournamentId}/rounds`);
     toast('¡Ronda generada!');
     navigate(`/rounds/${round.id}`);
   } catch (e) {
     toast(e.message, 'error');
-    navigate(`/tournaments/${tournamentId}`);
   }
 }
 
@@ -349,6 +406,7 @@ async function renderRound(id) {
         <span class="subtitle">${esc(r.tournament_name)}</span>
       </div>
       ${statusBadge(r.status)}
+      ${adminBtn()}
     </div>
 
     ${benchSection}
@@ -392,10 +450,34 @@ function buildMatchCard(m, roundId) {
               <div class="team-name-2">${t2names[1] || ''}</div>
             </div>
           </div>
+          ${isAdmin() ? `
           <div class="match-actions">
             <button class="btn btn-ghost btn-sm" onclick="editMatchScore(${m.id}, ${roundId}, ${m.team1_games}, ${m.team2_games})">
               ✏️ Editar resultado
             </button>
+          </div>` : ''}
+        </div>
+      </div>`;
+  }
+
+  if (!isAdmin()) {
+    return `
+      <div class="match-card">
+        <div class="match-card-header">CANCHA ${m.court_number}</div>
+        <div class="match-body">
+          <div class="team-row">
+            <div class="team-names">
+              <div class="team-name">${t1names[0] || ''}</div>
+              <div class="team-name-2">${t1names[1] || ''}</div>
+            </div>
+            <span class="score-pending">· · ·</span>
+          </div>
+          <div class="vs-divider">— vs —</div>
+          <div class="team-row">
+            <div class="team-names">
+              <div class="team-name">${t2names[0] || ''}</div>
+              <div class="team-name-2">${t2names[1] || ''}</div>
+            </div>
           </div>
         </div>
       </div>`;
@@ -548,6 +630,7 @@ async function renderLeaderboard(id) {
         <h1 style="font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(t.name)}</h1>
         <span class="subtitle">Clasificación individual</span>
       </div>
+      ${adminBtn()}
     </div>
 
     ${podiumHtml}
@@ -558,9 +641,10 @@ async function renderLeaderboard(id) {
     </div>
 
     <div class="page-actions">
-      <button class="btn btn-orange btn-full" onclick="generateRound(${id})">
-        ⚡ Generar Ronda ${t.rounds.length + 1}
-      </button>
+      ${isAdmin() ? `
+        <button class="btn btn-orange btn-full" onclick="generateRound(${id})">
+          ⚡ Generar Ronda ${t.rounds.length + 1}
+        </button>` : ''}
       <button class="btn btn-ghost btn-full" onclick="navigate('/tournaments/${id}')">
         ← Volver al torneo
       </button>
@@ -568,15 +652,3 @@ async function renderLeaderboard(id) {
     <div id="modal-container"></div>`;
 }
 
-// Make generateRound work from leaderboard (no event target)
-const _origGenerateRound = generateRound;
-// override to handle call without event
-async function generateRound(tournamentId) {
-  try {
-    const round = await POST(`/tournaments/${tournamentId}/rounds`);
-    toast('¡Ronda generada!');
-    navigate(`/rounds/${round.id}`);
-  } catch (e) {
-    toast(e.message, 'error');
-  }
-}

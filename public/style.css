@@ -521,3 +521,32 @@ select.form-control { cursor: pointer; }
   .btn { padding: 10px 14px; font-size: 14px; }
   .score-value { font-size: 20px; width: 34px; }
 }
+
+/* ─── ADMIN ──────────────────────────────────────────────────────────────── */
+.admin-btn {
+  background: rgba(255,255,255,0.15);
+  color: white;
+  border: 1px solid rgba(255,255,255,0.35);
+  border-radius: 6px;
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.admin-btn:hover { background: rgba(255,255,255,0.28); }
+.admin-btn.admin-btn-out {
+  background: transparent;
+  color: rgba(255,255,255,0.6);
+  border-color: rgba(255,255,255,0.2);
+}
+.admin-btn.admin-btn-out:hover { color: rgba(255,255,255,0.9); }
+
+.score-pending {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text-light);
+  letter-spacing: 4px;
+  flex-shrink: 0;
+}
